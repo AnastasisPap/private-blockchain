@@ -9,57 +9,56 @@
  *  run asynchronous.
  */
 
+ 
 const SHA256 = require('crypto-js/sha256');
 const hex2ascii = require('hex2ascii');
 
-class Block {
-
+class Block {  
     // Constructor - argument data will be the object containing the transaction data
-	constructor(data){
-		this.hash = null;                                           // Hash of the block
-		this.height = 0;                                            // Block Height (consecutive number of each block)
-		this.body = Buffer(JSON.stringify(data)).toString('hex');   // Will contain the transactions stored in the block, by default it will encode the data
-		this.time = 0;                                              // Timestamp for the Block creation
-		this.previousBlockHash = null;                              // Reference to the previous Block Hash
-    }
-
-    validate() {
-        let self = this;
-        return new Promise((resolve, reject) => {
-            // Save in auxiliary variable the current block hash
-            let auxiliaryHash = self.hash;        
-            // Recalculate the hash of the Block
-            const recalculatedHash = SHA256(JSON.stringify(self)).toString();
-            // Comparing if the hashes changed
-            // Returning the Block is not valid
-            if (auxiliaryHash != recalculatedHash) {
-                console.log('The given hash is different');
-                resolve(false);
-            }
-            // Returning the Block is valid
-            resolve(true);
-        });
+    constructor(data){
+        this.hash = null;                                           // Hash of the block
+        this.height = 0;                                            // Block Height (consecutive number of each block)
+        this.body = Buffer.from(JSON.stringify(data), 'ascii').toString('hex'); // Will contain the transactions stored in the block, by default it will encode the data
+        this.time = 0;                                              // Timestamp for the Block creation
+        this.previousBlockHash = null;                              // Reference to the previous Block Hash
     }
     
-    getBData() {
-        // Getting the encoded data saved in the Block
+    /**
+     *  validate() method will validate if the block has been tampered or not.
+     *  Been tampered means that someone from outside the application tried to change
+     *  values in the block data as a consecuence the hash of the block should be different.
+     */
+    validate() {
         let self = this;
-        // Decoding the data to retrieve the JSON representation of the object
-        const decodedData = hex2ascii(self.body);
-        // Parse the data to an object to be retrieve.
-        const block = JSON.parse(decodedData);
-        // Resolve with the data if the object isn't the Genesis block
-        return new Promise((res, rej) => {
-            if (block.data == 'Genesis Block') {
-                console.log('Requested Genesis Block');
-                reject('Genesis Block');
-            }
+        return new Promise(async (resolve, reject) => {
+            // Save in auxiliary variable the current block hash
+            const auxHash = self.hash;
+            // Recalculate the hash of the Block
+            const calcHash = await SHA256(JSON.stringify({ ...self, hash: null })).toString();
+            // Comparing if the hashes changed
+            // Returning the Block is not valid
+            // Returning the Block is valid
+            resolve(auxHash === calcHash);
+        });
+    }
 
-            console.log(`getBData: ${block.data}`);
-            resolve(block);
+    /**
+     *  Auxiliary Method to return the block body (decoding the data)
+     */
+    getBData() {
+        let self = this;
+        return new Promise((resolve, reject) => {
+            // Getting the encoded data saved in the Block
+            const encodedData = self.body;
+            // Decoding the data to retrieve the JSON representation of the object
+            const decodedData = hex2ascii(encodedData);
+            // Parse the data to an object to be retrieved.
+            const decodedObject = JSON.parse(decodedData);
+            // Resolve with the data if the object isn't the Genesis block
+            self.height > 0 ? resolve(decodedObject) : reject(new Error('genesis block'));
         });
     }
 
 }
 
-module.exports.Block = Block;
+module.exports.Block = Block; 

@@ -1,13 +1,14 @@
 /**
  *                          Blockchain Class
- *  The Blockchain class contain the basics functions to create your own private blockchain
+ *  The Blockchain class contains the basics functions to create your own private blockchain
  *  It uses libraries like `crypto-js` to create the hashes for each block and `bitcoinjs-message` 
  *  to verify a message signature. The chain is stored in the array
- *  `this.chain = [];`. Of course each time you run the application the chain will be empty because and array
- *  isn't a persisten storage method.
+ *  `this.chain = [];`. Of course each time you run the application the chain will be empty because an array
+ *  isn't a persistent storage method.
  *  
  */
 
+const hex2ascii = require('hex2ascii');
 const SHA256 = require('crypto-js/sha256');
 const BlockClass = require('./block.js');
 const bitcoinMessage = require('bitcoinjs-message');
@@ -53,32 +54,20 @@ class Blockchain {
      * _addBlock(block) will store a block in the chain
      * @param {*} block 
      * The method will return a Promise that will resolve with the block added
-     * or reject if an error happen during the execution.
+     * or reject if an error happen during the execution. 
      */
     _addBlock(block) {
         let self = this;
         return new Promise(async (resolve, reject) => {
-            try {
-                    // increment block height
-                block.height = self.height++;
-                // add timestamp
-                block.time = new Date().getTime().toString().slice(0, -3);
-
-                if (self.height == -1) {
-                    block.previousBlockHash = null;
-                } else {
-                    block.previousBlockHash = this.hash;
-                }
-                // get current block hash
-                block.hash = SHA256(JSON.stringify(block)).toString();
-                // push block to blockchain
-                self.chain.push(block);
-                // update block height
-                this.height += 1;
-                resolve(block);
-            } catch (err) {
-                reject(err.message);
-            }
+            let height = self.chain.length;
+            block.previousBlockHash = self.chain[height - 1] ? self.chain[height - 1].hash : null;
+            block.height = height;
+            block.time = new Date().getTime().toString().slice(0,-3);
+            block.hash = await SHA256(JSON.stringify(block)).toString();
+            resolve(block)
+            this.chain.push(block);
+            this.height = this.chain.length - 1;
+            return block;            
         });
     }
 
@@ -92,9 +81,8 @@ class Blockchain {
      */
     requestMessageOwnershipVerification(address) {
         return new Promise((resolve) => {
-            let message = `${address}:${new Date().getTime().toString().slice(0, -3)}:starRegistry`
-            console.log(`request ownership: ${message}`);
-            resolve(message);
+            let unsignedMessage = `${address}:${new Date().getTime().toString().slice(0,-3)}:starRegistry`;
+            resolve(unsignedMessage);
         });
     }
 
@@ -103,36 +91,24 @@ class Blockchain {
      * will allow users to register a new Block with the star object
      * into the chain. This method will resolve with the Block added or
      * reject with an error.
+     * @param {*} address 
+     * @param {*} message 
+     * @param {*} signature 
+     * @param {*} star 
      */
     submitStar(address, message, signature, star) {
         let self = this;
         return new Promise(async (resolve, reject) => {
             let messageTime = parseInt(message.split(':')[1]);
             let currentTime = parseInt(new Date().getTime().toString().slice(0, -3));
-
-            if (currentTime - messageTime > 300) {
-                reject(new Error('More than five minutes have passed :('));
-            }
-
-            let isVerified = false;
-            try {
-                isVerified = bitcoinMessage.verify(message, address, signature);
-            } catch (err) {
-                reject(err.message);
-            }
-
-            let data = {address: address, message: message, signature: signature, star: star};
-            let block = new BlockClass.Block(data);
-
-            if (!isVerified) {
-                console.log('Not verified, rejecting block...');
-                reject(block);
-                return;
-            }
-
-            console.log('Successfully added block!');
-            await this._addBlock(block);
-            resolve(block);
+            // reject on timeout
+            if (currentTime - messageTime >= 300) reject(new Error('Request timed out, more than 5 minutes.'));
+            if (!bitcoinMessage.verify(message, address, signature)) reject(new Error('Invalid message.'));
+            // add block to chain & resolve
+            let block = new BlockClass.Block({ star });
+            block.owner = address;
+            block = await self._addBlock(block)
+            resolve(block);             
         });
     }
 
@@ -145,12 +121,7 @@ class Blockchain {
     getBlockByHash(hash) {
         let self = this;
         return new Promise((resolve, reject) => {
-            let block = self.chain.find(block => block.hash == hash);
-            if (block) {
-                resolve(block);
-            } else {
-                resolve(null);
-            }
+        resolve(self.chain.filter(block => block.hash === hash)[0]);
         });
     }
 
@@ -163,11 +134,7 @@ class Blockchain {
         let self = this;
         return new Promise((resolve, reject) => {
             let block = self.chain.filter(p => p.height === height)[0];
-            if(block){
-                resolve(block);
-            } else {
-                resolve(null);
-            }
+            block ? resolve(block) : resolve(null);
         });
     }
 
@@ -180,32 +147,42 @@ class Blockchain {
     getStarsByWalletAddress (address) {
         let self = this;
         let stars = [];
-        return new Promise((resolve, reject) => {
-            self.chain.forEach(async (block) => {
-                let blockData = await block.getBData();
-                if (blockData.address === address) stars.push(blockData);
-            });
-            resolve(stars);
+        // validate chain
+        this.validateChain().then(errors => typeof errors === 'string' ?  console.log('[SUCCESS] ', errors) : errors.forEach(error => console.log('[ERROR] ', error)));
+        return new Promise(async (resolve, reject) => {
+            let ownedBlocks = self.chain.filter(block => block.owner === address);
+            if (ownedBlocks.length === 0) reject(new Error('Address not found.'));
+            stars = ownedBlocks.map(block => JSON.parse(hex2ascii(block.body)));
+            stars ? resolve(stars) : reject(new Error('Failed to return stars.'));
         });
     }
 
     /**
      * This method will return a Promise that will resolve with the list of errors when validating the chain.
+     * Steps to validate:
+     * 1. You should validate each block using `validateBlock`
+     * 2. Each Block should check with the previousBlockHash
      */
     validateChain() {
         let self = this;
         let errorLog = [];
         return new Promise(async (resolve, reject) => {
-            self.chain.forEach( (block) => {
-                if (!block.validate()) {
-                    errorLog.push(block);
+            for (let block of self.chain) {
+                if (await block.validate()) {
+                    if (block.height > 0) { // skip genesis block
+                        let prevBlock = self.chain.filter(b => b.height === block.height - 1)[0];
+                        if (block.previousBlockHash !== prevBlock.hash) {
+                            errorLog.push(new Error(`Invalid link: Block #${block.height} not linked to the hash of block #${block.height - 1}.`));
+                        }
+                    }
+                } else {
+                    errorLog.push(new Error(`Invalid block #${block.height}: ${block.hash}`))
                 }
-            });
-
-            resolve(errorLog);
+            }
+            errorLog.length > 0 ? resolve(errorLog) : resolve('No errors detected.');
         });
     }
 
 }
 
-module.exports.Blockchain = Blockchain;   
+module.exports.Blockchain = Blockchain;  
