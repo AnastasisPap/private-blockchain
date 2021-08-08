@@ -1,0 +1,28 @@
+{
+  "name": "private-blockchain",
+  "version": "1.0.0",
+  "description": "- `bitcoinjs-lib`\r - `bitcoinjs-message`\r - `body-parser`\r - `crypto-js`\r - `express`\r - `hex2ascii`\r - `morgan`",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/AnastasisPap/private-blockchain.git"
+  },
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/AnastasisPap/private-blockchain/issues"
+  },
+  "homepage": "https://github.com/AnastasisPap/private-blockchain#readme",
+  "dependencies": {
+    "bitcoinjs-lib": "^5.2.0",
+    "bitcoinjs-message": "^2.2.0",
+    "body-parser": "^1.19.0",
+    "crypto-js": "^4.1.1",
+    "express": "^4.17.1",
+    "hex2ascii": "0.0.3",
+    "morgan": "^1.10.0"
+  }
+}
